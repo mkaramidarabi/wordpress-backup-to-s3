@@ -24,8 +24,8 @@ Run with `-a` flag. This option will alert you and call the endpoint you provide
 
 Examples:
 
-`./backup-sql.sh -rame`
+`./wordpress-backup -rame`
 
-`./backup-sql.sh -ame`
+`./wordpress-backup -ame`
 
-`./backup-sql.sh -ae`
+`./wordpress-backup -ae`
