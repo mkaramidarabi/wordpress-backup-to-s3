@@ -1,0 +1,6 @@
+export SECRET="YourSecret"
+export BACKUP_DESTINATION="s3://wordpress-backups/"
+export ALERT_ENDPOINT="https://alertmanager.com/1234"
+export MYSQL_USER="root"
+export DB_NAME="WordPress"
+export WORDPRESS_DIR="/var/www/html/wordpress/blog/"

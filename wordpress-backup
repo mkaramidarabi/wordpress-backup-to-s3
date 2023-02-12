@@ -1,0 +1,115 @@
+#!/usr/bin/bash
+
+# check if s3cmd is installed
+if ! command -v s3cmd &> /dev/null; then
+    echo "s3cmd could not be found. install it using apt."
+    exit 1
+fi
+
+# check if s3cmd is configured
+if [[ ! -f "$HOME/.s3cfg" ]]; then
+	echo "s3cmd needs to be configured. use 's3cmd --configure' to configure it."
+	exit 1
+fi
+
+MYSQL_PASSWORD_PROMPT=false
+# check if mysqldump user configured
+if [[ "$1" == *"-"* && "$1" == *"m"* ]]; then
+	if [[ ! -f "$HOME/.my.cnf" ]]; then
+		echo "mysqldump needs to be configured. check out this link: https://stackoverflow.com/questions/9293042/how-to-perform-a-mysqldump-without-a-password-prompt"
+		exit 1
+	fi
+else
+	MYSQL_PASSWORD_PROMPT=true
+fi
+
+# check if user is root
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run this script as root user"
+    exit 1
+fi
+
+# check if ccrypt apt is installed.
+if ! command -v ccrypt &> /dev/null
+then
+    echo "ccrypt could not be found. install it using apt."
+    exit 1
+fi
+
+. ./config.sh
+
+check_if_was_successful() {
+	if [[ $? != 0 ]]; then
+		echo "$1 failed ..."
+		# check if the admin wants to be alerted if something got wrong.
+		if [[ "$1" == *"-"* && "$1" == *"a"* ]]; then
+			curl $ALERT_ENDPOINT &> /dev/null
+			check_if_was_successful alert
+		fi
+		exit 1
+	else
+			echo "$1 is Done"
+	fi
+}
+
+
+remove_file_from_local() {
+    rm -rf "$DEST"
+}
+
+
+send_via_s3cmd() {
+	s3cmd -v put "$BACKUP_ALL" "$S3_DIR"
+  check_if_was_successful s3cmdPut
+}
+
+copy_wordpress_files_to_backup_dir() {
+  cp -r "$WORDPRESS_DIR" "$DEST"
+}
+
+convert_dir_to_tar() {
+  tar -czvf "$BACKUP_ALL" "$DEST"
+}
+
+
+DATE=$(date +%Y-%m-%d-%H-%M-%S)
+mkdir -p "$HOME"/db_backups
+
+DEST=$HOME/db_backups/$DATE
+BACKUP_SQL=$DEST/Wordpress-$DATE.sql
+BACKUP_ALL=$DEST/Wordpress-$DATE.tar.gz
+
+mkdir -p "$DEST"
+
+if [ $MYSQL_PASSWORD_PROMPT = true ]; then
+	mysqldump -u $MYSQL_USER -p --single-transaction $DB_NAME > "$BACKUP_SQL"
+else
+	mysqldump -u $MYSQL_USER --single-transaction $DB_NAME > "$BACKUP_SQL"
+fi
+check_if_was_successful mysqlDump
+
+
+copy_wordpress_files_to_backup_dir
+check_if_was_successful copy_wordpress_files_to_backup_dir
+
+convert_dir_to_tar
+check_if_was_successful convert_dir_to_tar
+
+
+# check if encryption config provided
+if [[ "$1" == *"-"* && "$1" == *"e"* ]]; then
+	ccrypt -e -E SECRET -r "$BACKUP_ALL"
+	check_if_was_successful encryption
+	# after encryption file name must be changed.
+	BACKUP_ALL="$BACKUP_ALL".cpt
+fi
+
+send_via_s3cmd
+check_if_was_successful send_via_s3cmd
+
+# check if local file removal config provided
+if [[ "$1" == *"-"* && "$1" == *"r"* ]]; then
+	remove_file_from_local
+	check_if_was_successful remove_file_from_local
+	echo "file removed from local"
+fi
